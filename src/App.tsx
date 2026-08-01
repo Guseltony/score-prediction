@@ -83,8 +83,8 @@ function App() {
     });
   }, []);
 
-  const selectAll  = useCallback(() => setSelectedScores(new Set(allScores)), [allScores]);
-  const clearAll   = useCallback(() => setSelectedScores(new Set()), []);
+  const selectAll = useCallback(() => setSelectedScores(new Set(allScores)), [allScores]);
+  const clearAll = useCallback(() => setSelectedScores(new Set()), []);
 
   // ── Spin options (passed to hook) ─────────────────────────────────────────
   const spinOptions = useMemo(() => ({ mode: predictionMode, probabilities }), [predictionMode, probabilities]);
