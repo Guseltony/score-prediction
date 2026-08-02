@@ -28,6 +28,9 @@ export interface XGSettings {
 /** Supported multi-spin counts */
 export type SpinCount = 5 | 10 | 20 | 50 | 100;
 
+/** Supported Monte Carlo simulation counts */
+export type SimCount = 100 | 500 | 1000 | 5000;
+
 // ─── Spin Results ─────────────────────────────────────────────────────────────
 
 export interface SpinResult {
@@ -62,6 +65,46 @@ export interface HistoryEntry {
   selectedScoresCount: number;
   suggestedScores: ScoreString[];
   predictionMode: PredictionMode;
+}
+
+// ─── V2: Advanced Modifiers ─────────────────────────────────────────────────
+
+/** Advanced xG modifier settings for the Poisson model */
+export interface AdvancedModifiers {
+  homeAdvantageEnabled: boolean;
+  /** 0 = equal weight all matches, 1 = heavily weight most recent matches */
+  formWeightRecency: number;
+}
+
+// ─── V2: Market Probabilities ────────────────────────────────────────────────
+
+export interface MarketProbabilities {
+  over15: number;
+  over25: number;
+  over35: number;
+  under15: number;
+  under25: number;
+  under35: number;
+  bttsYes: number;
+  bttsNo: number;
+  homeWin: number;
+  draw: number;
+  awayWin: number;
+}
+
+// ─── V2: Monte Carlo ─────────────────────────────────────────────────────────
+
+export interface MonteCarloEntry {
+  score: ScoreString;
+  count: number;
+  pct: number;
+  modelPct: number;
+}
+
+export interface MonteCarloResult {
+  ranked: MonteCarloEntry[];
+  frequency: FrequencyMap;
+  simCount: number;
 }
 
 // ─── Future Extensibility Stubs ───────────────────────────────────────────────

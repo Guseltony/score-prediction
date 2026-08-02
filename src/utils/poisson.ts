@@ -35,14 +35,16 @@ export function poissonPMF(lambda: number, k: number): number {
 export function calculatePoissonProbabilities(
   homeXG: number,
   awayXG: number,
-  scores: ScoreString[]
+  scores: ScoreString[],
+  homeAdvantageMultiplier = 1.0,
 ): ProbabilityMap {
+  const effectiveHomeXG = homeXG * homeAdvantageMultiplier;
   const raw: ProbabilityMap = {};
   let total = 0;
 
   for (const score of scores) {
     const [h, a] = score.split('-').map(Number);
-    const p = poissonPMF(homeXG, h) * poissonPMF(awayXG, a);
+    const p = poissonPMF(effectiveHomeXG, h) * poissonPMF(awayXG, a);
     raw[score] = p;
     total += p;
   }
