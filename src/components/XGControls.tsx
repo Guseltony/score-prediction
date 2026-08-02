@@ -1,14 +1,17 @@
 import React, { useState } from 'react';
-import type { PredictionMode, XGSettings } from '../types';
+import type { PredictionMode, XGSettings, AdvancedModifiers } from '../types';
 import XGCalculator from './XGCalculator';
+import AdvancedModifiersPanel from './AdvancedModifiersPanel';
 
 interface XGControlsProps {
   mode: PredictionMode;
   xgSettings: XGSettings;
   homeTeamName: string;
   awayTeamName: string;
+  modifiers: AdvancedModifiers;
   onModeChange: (mode: PredictionMode) => void;
   onXGChange: (settings: XGSettings) => void;
+  onModifiersChange: (modifiers: AdvancedModifiers) => void;
 }
 
 const MODES: { id: PredictionMode; label: string; icon: string; description: string }[] = [
@@ -40,10 +43,13 @@ const XGControls: React.FC<XGControlsProps> = ({
   xgSettings,
   homeTeamName,
   awayTeamName,
+  modifiers,
   onModeChange,
   onXGChange,
+  onModifiersChange,
 }) => {
   const [showCalculator, setShowCalculator] = useState(false);
+  const [showAdvanced, setShowAdvanced] = useState(false);
   const [appliedMsg, setAppliedMsg] = useState(false);
 
   const handleApplyXG = (homeXG: number, awayXG: number) => {
@@ -134,6 +140,43 @@ const XGControls: React.FC<XGControlsProps> = ({
                 Reset defaults
               </button>
             </div>
+          </div>
+
+          {/* ── Advanced Modifiers toggle ── */}
+          <div className="border border-slate-700/40 rounded-xl overflow-hidden">
+            <button
+              id="toggle-advanced-modifiers"
+              onClick={() => setShowAdvanced((v) => !v)}
+              className="w-full flex items-center justify-between px-4 py-3
+                bg-slate-900/30 hover:bg-slate-700/40 transition-colors"
+            >
+              <div className="flex items-center gap-2">
+                <span className="text-lg">🧬</span>
+                <div className="text-left">
+                  <p className="text-sm font-semibold text-white">
+                    Advanced Modifiers
+                  </p>
+                  <p className="text-xs text-slate-500">
+                    Home advantage boost · Form recency weighting
+                    {modifiers.homeAdvantageEnabled || modifiers.formWeightRecency > 0
+                      ? <span className="ml-1 text-violet-400 font-semibold">· Active</span>
+                      : null}
+                  </p>
+                </div>
+              </div>
+              <span className={`text-slate-400 transition-transform duration-200 ${showAdvanced ? 'rotate-180' : ''}`}>
+                ▼
+              </span>
+            </button>
+
+            {showAdvanced && (
+              <div className="p-4 border-t border-slate-700/30 animate-fade-in">
+                <AdvancedModifiersPanel
+                  modifiers={modifiers}
+                  onChange={onModifiersChange}
+                />
+              </div>
+            )}
           </div>
 
           {/* ── Calculator toggle ── */}
