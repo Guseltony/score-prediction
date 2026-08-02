@@ -90,6 +90,13 @@ export interface MarketProbabilities {
   homeWin: number;
   draw: number;
   awayWin: number;
+  /** Top correct score prediction by model probability */
+  topScore: string;
+  topScorePct: number;
+  /** Fair decimal odds for the top score (1 / probability) */
+  topScoreOdds: string;
+  /** 2nd and 3rd most likely correct scores */
+  runner: Array<{ score: string; pct: number; odds: string }>;
 }
 
 // ─── V2: Monte Carlo ─────────────────────────────────────────────────────────

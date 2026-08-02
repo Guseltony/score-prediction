@@ -6,15 +6,6 @@ interface MarketDashboardProps {
   predictionMode: PredictionMode;
 }
 
-interface MarketCardProps {
-  label: string;
-  pct: number;
-  /** Optional: show the opposing market below */
-  oppLabel?: string;
-  oppPct?: number;
-  colorClass: string;
-  icon: string;
-}
 
 function getPctColor(pct: number): string {
   if (pct >= 65) return 'text-emerald-400';
