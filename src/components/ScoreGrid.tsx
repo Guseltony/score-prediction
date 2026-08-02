@@ -1,11 +1,13 @@
 import React from 'react';
 import type { ProbabilityMap, PredictionMode, ScoreString } from '../types';
+import type { SmartFilterResult } from '../utils/smartFilter';
 
 interface ScoreGridProps {
   scores: ScoreString[];
   selectedScores: Set<ScoreString>;
   probabilities?: ProbabilityMap;
   predictionMode: PredictionMode;
+  smartFilterResult?: SmartFilterResult | null;
   onToggle: (score: ScoreString) => void;
   onSelectAll: () => void;
   onClearAll: () => void;
@@ -20,6 +22,7 @@ const ScoreGrid: React.FC<ScoreGridProps> = ({
   selectedScores,
   probabilities = {},
   predictionMode,
+  smartFilterResult = null,
   onToggle,
   onSelectAll,
   onClearAll,
@@ -84,9 +87,11 @@ const ScoreGrid: React.FC<ScoreGridProps> = ({
           const isSelected = selectedScores.has(score);
           const prob = probabilities[score] ?? 0;
           const relativeIntensity = maxProb > 0 ? prob / maxProb : 0;
+          const isFiltered = smartFilterResult?.eliminated.has(score) ?? false;
+          const filterReason = smartFilterResult?.reasons[score];
 
           // Heatmap glow: stronger blue for higher probability when NOT selected
-          const heatmapBg = showHeatmap && !isSelected
+          const heatmapBg = showHeatmap && !isSelected && !isFiltered
             ? `rgba(59, 130, 246, ${relativeIntensity * 0.35})`
             : undefined;
 
@@ -98,23 +103,32 @@ const ScoreGrid: React.FC<ScoreGridProps> = ({
               id={`score-chip-${score}`}
               onClick={() => onToggle(score)}
               title={
-                showHeatmap
+                isFiltered
+                  ? `❌ Filtered: ${filterReason ?? 'Eliminated by Smart Filter'}`
+                  : showHeatmap
                   ? `${score} — ${probPct}% probability${isSelected ? ' (selected)' : ''}`
                   : `${isSelected ? 'Deselect' : 'Select'} ${score}`
               }
               style={heatmapBg ? { background: heatmapBg } : undefined}
               className={`relative group flex flex-col items-center justify-center rounded-xl text-xs font-bold
                 transition-all duration-200 hover:scale-105 active:scale-95 py-1.5 px-1
-                ${isSelected
+                ${isFiltered
+                  ? 'opacity-30 bg-red-900/20 border border-red-800/30 text-red-400 cursor-not-allowed hover:scale-100'
+                  : isSelected
                   ? 'bg-gradient-to-br from-blue-600 to-indigo-600 text-white shadow-lg shadow-blue-900/40 ring-2 ring-blue-400/40'
                   : 'text-slate-300 hover:text-white border border-slate-600/50 hover:border-slate-500'
                 }`}
             >
-              {isSelected && (
+              {isFiltered && (
+                <span className="absolute inset-0 flex items-center justify-center text-red-500/60 text-[10px] font-bold">
+                  ✕
+                </span>
+              )}
+              {isSelected && !isFiltered && (
                 <span className="absolute top-0.5 right-0.5 text-[7px] text-blue-200">✓</span>
               )}
-              <span className="text-xs font-bold leading-none">{score}</span>
-              {showHeatmap && (
+              <span className={`text-xs font-bold leading-none ${isFiltered ? 'line-through' : ''}`}>{score}</span>
+              {showHeatmap && !isFiltered && (
                 <span className={`text-[9px] mt-0.5 font-medium leading-none
                   ${isSelected ? 'text-blue-200' : relativeIntensity > 0.5 ? 'text-amber-400' : 'text-slate-500'}`}>
                   {probPct}%
