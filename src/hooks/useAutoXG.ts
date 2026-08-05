@@ -48,12 +48,12 @@ export function useAutoXG(
   awayTeamName: string,
 ): AutoXGResult | null {
   return useMemo(() => {
-    if (!homeFixtures?.length || !awayFixtures?.length) return null;
+    if (!homeFixtures?.length && !awayFixtures?.length) return null;
 
-    const homeAvgScored    = avgGoals(homeFixtures, homeTeamName, 'scored');
-    const homeAvgConceded  = avgGoals(homeFixtures, homeTeamName, 'conceded');
-    const awayAvgScored    = avgGoals(awayFixtures, awayTeamName, 'scored');
-    const awayAvgConceded  = avgGoals(awayFixtures, awayTeamName, 'conceded');
+    const homeAvgScored    = homeFixtures?.length ? avgGoals(homeFixtures, homeTeamName, 'scored') : LEAGUE_AVG_GOALS;
+    const homeAvgConceded  = homeFixtures?.length ? avgGoals(homeFixtures, homeTeamName, 'conceded') : LEAGUE_AVG_GOALS;
+    const awayAvgScored    = awayFixtures?.length ? avgGoals(awayFixtures, awayTeamName, 'scored') : LEAGUE_AVG_GOALS;
+    const awayAvgConceded  = awayFixtures?.length ? avgGoals(awayFixtures, awayTeamName, 'conceded') : LEAGUE_AVG_GOALS;
 
     // Defence factors: > 1 means leaky defence (concede more than avg)
     const homeDefenseFactor = homeAvgConceded > 0 ? LEAGUE_AVG_GOALS / homeAvgConceded : 1;
@@ -68,7 +68,7 @@ export function useAutoXG(
       Math.min(4.0, parseFloat((awayAvgScored * homeDefenseFactor).toFixed(2)))
     );
 
-    const totalSamples = homeFixtures.length + awayFixtures.length;
+    const totalSamples = (homeFixtures?.length ?? 0) + (awayFixtures?.length ?? 0);
     const confidence: 'high' | 'medium' | 'low' =
       totalSamples >= 8 ? 'high' : totalSamples >= 4 ? 'medium' : 'low';
 

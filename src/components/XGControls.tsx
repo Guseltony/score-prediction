@@ -1,13 +1,10 @@
 import React, { useState } from 'react';
 import type { PredictionMode, XGSettings, AdvancedModifiers } from '../types';
-import XGCalculator from './XGCalculator';
 import AdvancedModifiersPanel from './AdvancedModifiersPanel';
 
 interface XGControlsProps {
   mode: PredictionMode;
   xgSettings: XGSettings;
-  homeTeamName: string;
-  awayTeamName: string;
   modifiers: AdvancedModifiers;
   oddsAlpha: number;
   hasLiveOdds: boolean;
@@ -50,8 +47,6 @@ const MODES: { id: PredictionMode; label: string; icon: string; description: str
 const XGControls: React.FC<XGControlsProps> = ({
   mode,
   xgSettings,
-  homeTeamName,
-  awayTeamName,
   modifiers,
   oddsAlpha,
   hasLiveOdds,
@@ -60,16 +55,7 @@ const XGControls: React.FC<XGControlsProps> = ({
   onModifiersChange,
   onOddsAlphaChange,
 }) => {
-  const [showCalculator, setShowCalculator] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
-  const [appliedMsg, setAppliedMsg] = useState(false);
-
-  const handleApplyXG = (homeXG: number, awayXG: number) => {
-    onXGChange({ homeXG, awayXG });
-    setShowCalculator(false);
-    setAppliedMsg(true);
-    setTimeout(() => setAppliedMsg(false), 3000);
-  };
 
   return (
     <div className="bg-slate-800/60 border border-slate-700/50 rounded-2xl p-6 backdrop-blur-sm shadow-xl">
@@ -116,11 +102,6 @@ const XGControls: React.FC<XGControlsProps> = ({
               <p className="text-xs font-semibold text-blue-300 uppercase tracking-wider flex items-center gap-1.5">
                 <span>⚡</span> Expected Goals (xG)
               </p>
-              {appliedMsg && (
-                <span className="text-xs text-green-400 flex items-center gap-1 animate-fade-in">
-                  ✅ Stats applied!
-                </span>
-              )}
             </div>
 
             <div className="space-y-4">
@@ -191,40 +172,6 @@ const XGControls: React.FC<XGControlsProps> = ({
             )}
           </div>
 
-          {/* ── Calculator toggle ── */}
-          <div className="border border-slate-700/40 rounded-xl overflow-hidden">
-            <button
-              id="toggle-xg-calculator"
-              onClick={() => setShowCalculator((v) => !v)}
-              className="w-full flex items-center justify-between px-4 py-3
-                bg-slate-900/30 hover:bg-slate-700/40 transition-colors"
-            >
-              <div className="flex items-center gap-2">
-                <span className="text-lg">📥</span>
-                <div className="text-left">
-                  <p className="text-sm font-semibold text-white">
-                    Calculate xG from Team Stats
-                  </p>
-                  <p className="text-xs text-slate-500">
-                    Enter recent match results + H2H to auto-derive xG
-                  </p>
-                </div>
-              </div>
-              <span className={`text-slate-400 transition-transform duration-200 ${showCalculator ? 'rotate-180' : ''}`}>
-                ▼
-              </span>
-            </button>
-
-            {showCalculator && (
-              <div className="p-4 border-t border-slate-700/30 animate-fade-in">
-                <XGCalculator
-                  homeTeamName={homeTeamName}
-                  awayTeamName={awayTeamName}
-                  onApply={handleApplyXG}
-                />
-              </div>
-            )}
-          </div>
         </div>
       )}
 
