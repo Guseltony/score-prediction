@@ -84,16 +84,25 @@ function App() {
     () => storageGet<number>(STORAGE_KEYS.ODDS_ALPHA, DEFAULT_ODDS_ALPHA)
   );
   const [fixtureId, setFixtureId] = useState<number | null>(null);
-  const [prefilledOdds, setPrefilledOdds] = useState<Record<string, number>>({});
 
-  // ── Live odds via TanStack Query ──────────────────────────────────────────
+  // ── Live odds via TanStack Query ──────────────────────────────────────
   const {
     data: oddsData,
     isLoading: oddsLoading,
   } = useFixtureOdds(fixtureId);
 
-  const liveMatchOdds: ParsedMatchOdds | null = oddsData?.matchOdds ?? null;
-  const liveCorrectScoreOdds: ParsedCorrectScoreOdds = oddsData?.correctScoreOdds ?? {};
+  // Stable memoized values — prevents new object references on every render
+  // (a bare `?? {}` creates a new object each render, causing infinite update loops)
+  const liveMatchOdds = useMemo<ParsedMatchOdds | null>(
+    () => oddsData?.matchOdds ?? null,
+    [oddsData],
+  );
+  const liveCorrectScoreOdds = useMemo<ParsedCorrectScoreOdds>(
+    () => oddsData?.correctScoreOdds ?? {},
+    [oddsData],
+  );
+  // prefilledOdds is derived directly from liveCorrectScoreOdds — no setState needed
+  const prefilledOdds = liveCorrectScoreOdds;
   const hasLiveOdds = Object.keys(liveCorrectScoreOdds).length > 0 || liveMatchOdds !== null;
 
   // ── Spin state ────────────────────────────────────────────────────────────
@@ -270,6 +279,15 @@ function App() {
   // Show analytics panels only for analytical modes
   const isAnalyticsMode = predictionMode !== 'uniform';
 
+  // Market dashboard only makes sense when there's a fixture context
+  // (team names entered or xG changed from defaults)
+  const DEFAULT_HOME_XG = 1.5;
+  const DEFAULT_AWAY_XG = 1.2;
+  const hasFixtureContext =
+    !!(matchInfo.homeTeam || matchInfo.awayTeam) ||
+    xgSettings.homeXG !== DEFAULT_HOME_XG ||
+    xgSettings.awayXG !== DEFAULT_AWAY_XG;
+
   return (
     <div className="min-h-screen bg-slate-900 text-slate-100">
       <Header />
@@ -295,8 +313,6 @@ function App() {
         <XGControls
           mode={predictionMode}
           xgSettings={xgSettings}
-          homeTeamName={matchInfo.homeTeam}
-          awayTeamName={matchInfo.awayTeam}
           modifiers={modifiers}
           oddsAlpha={oddsAlpha}
           hasLiveOdds={hasLiveOdds}
@@ -329,11 +345,13 @@ function App() {
           onClearAll={clearAll}
         />
 
-        {/* V2: Market Probabilities Dashboard — analytical modes only */}
-        {isAnalyticsMode && (
+        {/* V2: Market Probabilities Dashboard — only when there's fixture context */}
+        {isAnalyticsMode && hasFixtureContext && (
           <MarketDashboard
             markets={marketProbabilities}
             predictionMode={predictionMode}
+            homeTeam={matchInfo.homeTeam || undefined}
+            awayTeam={matchInfo.awayTeam || undefined}
           />
         )}
 
@@ -345,7 +363,6 @@ function App() {
             modelProbabilities={probabilities}
             bookmakerName={oddsData?.bookmakerName ?? ''}
             isLoading={oddsLoading}
-            onPrefilledOddsChange={setPrefilledOdds}
           />
         )}
 

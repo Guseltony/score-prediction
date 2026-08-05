@@ -4,6 +4,8 @@ import type { MarketProbabilities, PredictionMode } from '../types';
 interface MarketDashboardProps {
   markets: MarketProbabilities;
   predictionMode: PredictionMode;
+  homeTeam?: string;
+  awayTeam?: string;
 }
 
 
@@ -58,8 +60,9 @@ const ProbCard: React.FC<{ label: string; pct: number; icon: string; flip?: bool
  * MarketDashboard – Displays aggregated betting market probabilities.
  * Shows Over/Under (1.5/2.5/3.5), BTTS, and 1X2.
  */
-const MarketDashboard: React.FC<MarketDashboardProps> = ({ markets, predictionMode }) => {
+const MarketDashboard: React.FC<MarketDashboardProps> = ({ markets, predictionMode, homeTeam, awayTeam }) => {
   const isUniform = predictionMode === 'uniform';
+  const hasFixture = homeTeam && awayTeam;
 
   return (
     <div className="bg-slate-800/60 border border-slate-700/50 rounded-2xl p-6 backdrop-blur-sm shadow-xl">
@@ -71,9 +74,28 @@ const MarketDashboard: React.FC<MarketDashboardProps> = ({ markets, predictionMo
           V2 Feature
         </span>
       </div>
+
+      {/* Fixture context badge */}
+      {hasFixture ? (
+        <div className="flex items-center gap-2 mb-3">
+          <span className="text-xs font-bold text-white bg-slate-700/60 border border-slate-600/50
+            px-3 py-1.5 rounded-full flex items-center gap-1.5">
+            🏟️
+            <span className="text-blue-300">{homeTeam}</span>
+            <span className="text-slate-500">vs</span>
+            <span className="text-violet-300">{awayTeam}</span>
+          </span>
+        </div>
+      ) : (
+        <p className="text-amber-500/60 text-xs mb-2 flex items-center gap-1">
+          <span>⚠️</span> No fixture selected — probabilities are based on default xG
+        </p>
+      )}
+
       <p className="text-slate-500 text-xs mb-5">
         Aggregated from all selected scorelines{isUniform ? '' : ' using model probabilities'}.
       </p>
+
 
       {/* ── Correct Score Prediction ── */}
       {markets.topScore && (
