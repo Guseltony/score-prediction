@@ -1,16 +1,20 @@
 /**
  * footballApi.ts — Base API client for api-football.com (v3.football.api-sports.io)
  *
- * All requests use the API key from the environment variable VITE_API_FOOTBALL_KEY.
- * Every endpoint call goes through `apiFetch` which handles headers and error normalisation.
+ * In development: requests go through the Vite proxy at /api-football/*
+ *   → proxy injects the auth headers and forwards to api-sports.io (no CORS issue)
+ *
+ * In production: requests go directly to api-sports.io with the auth header.
+ *   (api-sports.io does support CORS for production browser requests)
  */
 
-const BASE_URL = 'https://v3.football.api-sports.io';
+// In dev the Vite proxy handles auth headers; in prod we call directly.
+const BASE_URL = import.meta.env.DEV
+  ? '/api-football'
+  : 'https://v3.football.api-sports.io';
 
 function getApiKey(): string {
-  const key = import.meta.env.VITE_API_FOOTBALL_KEY as string | undefined;
-  if (!key) throw new Error('VITE_API_FOOTBALL_KEY is not set in .env');
-  return key;
+  return import.meta.env.VITE_API_FOOTBALL_KEY as string ?? '';
 }
 
 /**
@@ -22,15 +26,24 @@ export async function apiFetch<T>(
   endpoint: string,
   params: Record<string, string | number> = {}
 ): Promise<T> {
-  const url = new URL(`${BASE_URL}${endpoint}`);
+  // Build URL — relative BASE_URL (proxy) needs the window origin as base
+  const fullBase = BASE_URL.startsWith('/')
+    ? `${window.location.origin}${BASE_URL}`
+    : BASE_URL;
+  const url = new URL(`${fullBase}${endpoint}`);
   Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, String(v)));
 
-  const res = await fetch(url.toString(), {
-    headers: {
-      'x-apisports-key': getApiKey(),
-      'x-apisports-host': 'v3.football.api-sports.io',
-    },
-  });
+  // In dev the proxy injects headers, so we only need the key in prod
+  const headers: Record<string, string> = {};
+  if (!import.meta.env.DEV) {
+    const key = getApiKey();
+    if (key) {
+      headers['x-apisports-key'] = key;
+      headers['x-apisports-host'] = 'v3.football.api-sports.io';
+    }
+  }
+
+  const res = await fetch(url.toString(), { headers });
 
   if (!res.ok) {
     throw new Error(`API-Football error: ${res.status} ${res.statusText}`);
@@ -39,8 +52,9 @@ export async function apiFetch<T>(
   const json = await res.json();
 
   // API-Football wraps all responses in { response: [...], errors: {} }
-  if (json.errors && Object.keys(json.errors).length > 0) {
-    const errMsg = Object.values(json.errors).join(', ');
+  const errs = json.errors;
+  if (errs && !Array.isArray(errs) && Object.keys(errs).length > 0) {
+    const errMsg = Object.values(errs).join(', ');
     throw new Error(`API-Football API error: ${errMsg}`);
   }
 
