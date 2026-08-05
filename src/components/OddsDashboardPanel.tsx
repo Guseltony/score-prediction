@@ -9,7 +9,6 @@ interface OddsDashboardPanelProps {
   modelProbabilities: ProbabilityMap;
   bookmakerName: string;
   isLoading: boolean;
-  onPrefilledOddsChange: (odds: Record<string, number>) => void;
 }
 
 // ─── Edge badge ───────────────────────────────────────────────────────────────
@@ -38,12 +37,7 @@ const OddsDashboardPanel: React.FC<OddsDashboardPanelProps> = ({
   modelProbabilities,
   bookmakerName,
   isLoading,
-  onPrefilledOddsChange,
 }) => {
-  // Notify parent of correct score odds for MonteCarloPanel pre-fill
-  React.useEffect(() => {
-    onPrefilledOddsChange(correctScoreOdds);
-  }, [correctScoreOdds]);
 
   if (isLoading) {
     return (
