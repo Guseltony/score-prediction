@@ -7,7 +7,7 @@ import {
   HOME_ADVANTAGE_FACTOR,
   H2H_WEIGHT,
 } from '../utils/calculateXG';
-import type { XGCalculationResult, XGBreakdown } from '../utils/calculateXG';
+import type { XGCalculationResult } from '../utils/calculateXG';
 
 interface XGCalculatorProps {
   homeTeamName: string;

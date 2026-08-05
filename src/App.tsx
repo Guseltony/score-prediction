@@ -12,10 +12,14 @@ import { calculateMarketProbabilities } from './utils/marketProbabilities';
 import { applySmartFilter } from './utils/smartFilter';
 import type { SmartFilterResult } from './utils/smartFilter';
 import { saveHistory, loadHistory, clearPersistedHistory } from './utils/localStorage';
+import { storageGet, storageSet, STORAGE_KEYS } from './utils/storage';
+import { calculateBlendedProbabilities } from './utils/oddsBlend';
 import { useRandomScore } from './hooks/useRandomScore';
+import { useFixtureOdds } from './hooks/useFixtureOdds';
+import type { ParsedMatchOdds, ParsedCorrectScoreOdds } from './api/types';
 
 import Header from './components/Header';
-import MatchForm from './components/MatchForm';
+import FixtureLookupPanel from './components/FixtureLookupPanel';
 import ScoreGenerator from './components/ScoreGenerator';
 import XGControls from './components/XGControls';
 import ScoreGrid from './components/ScoreGrid';
@@ -26,6 +30,7 @@ import SuggestionCard from './components/SuggestionCard';
 import MonteCarloPanel from './components/MonteCarloPanel';
 import MarketDashboard from './components/MarketDashboard';
 import SmartFilterPanel from './components/SmartFilterPanel';
+import OddsDashboardPanel from './components/OddsDashboardPanel';
 import History from './components/History';
 import Footer from './components/Footer';
 
@@ -35,26 +40,61 @@ const DEFAULT_MODIFIERS: AdvancedModifiers = {
   homeAdvantageEnabled: false,
   formWeightRecency: 0,
 };
+const DEFAULT_FIXTURE: MatchInfo = { homeTeam: '', awayTeam: '' };
+const DEFAULT_ODDS_ALPHA = 0.6;
 
 function App() {
-  // ── Core state ────────────────────────────────────────────────────────────
-  const [matchInfo, setMatchInfo] = useState<MatchInfo>({ homeTeam: '', awayTeam: '' });
-  const [maxGoals, setMaxGoals] = useState(DEFAULT_MAX_GOALS);
-  const [allScores, setAllScores] = useState<ScoreString[]>(() => generateScores(DEFAULT_MAX_GOALS));
-  const [selectedScores, setSelectedScores] = useState<Set<ScoreString>>(
-    () => new Set(generateScores(DEFAULT_MAX_GOALS))
+  // ── Core state (booted from localStorage) ────────────────────────────────
+  const [matchInfo, setMatchInfo] = useState<MatchInfo>(
+    () => storageGet<MatchInfo>(STORAGE_KEYS.LAST_FIXTURE, DEFAULT_FIXTURE)
+  );
+  const [maxGoals, setMaxGoals] = useState<number>(
+    () => storageGet<number>(STORAGE_KEYS.MAX_GOALS, DEFAULT_MAX_GOALS)
+  );
+  const [allScores, setAllScores] = useState<ScoreString[]>(() => {
+    const saved = storageGet<number>(STORAGE_KEYS.MAX_GOALS, DEFAULT_MAX_GOALS);
+    return generateScores(saved);
+  });
+  const [selectedScores, setSelectedScores] = useState<Set<ScoreString>>(() => {
+    const saved = storageGet<number>(STORAGE_KEYS.MAX_GOALS, DEFAULT_MAX_GOALS);
+    return new Set(generateScores(saved));
+  });
+
+  // ── Prediction model state (booted from localStorage) ─────────────────────
+  const [predictionMode, setPredictionMode] = useState<PredictionMode>(
+    () => storageGet<PredictionMode>(STORAGE_KEYS.PREDICTION_MODE, 'poisson')
+  );
+  const [xgSettings, setXGSettings] = useState<XGSettings>(
+    () => storageGet<XGSettings>(STORAGE_KEYS.XG_SETTINGS, DEFAULT_XG)
   );
 
-  // ── Prediction model state ────────────────────────────────────────────────
-  const [predictionMode, setPredictionMode] = useState<PredictionMode>('poisson');
-  const [xgSettings, setXGSettings] = useState<XGSettings>(DEFAULT_XG);
+  // ── V2: Advanced modifiers (booted from localStorage) ────────────────────
+  const [modifiers, setModifiers] = useState<AdvancedModifiers>(
+    () => storageGet<AdvancedModifiers>(STORAGE_KEYS.MODIFIERS, DEFAULT_MODIFIERS)
+  );
 
-  // ── V2: Advanced modifiers ────────────────────────────────────────────────
-  const [modifiers, setModifiers] = useState<AdvancedModifiers>(DEFAULT_MODIFIERS);
-
-  // ── V2: Smart filter ─────────────────────────────────────────────────────
-  const [smartFilterEnabled, setSmartFilterEnabled] = useState(false);
+  // ── V2: Smart filter (booted from localStorage) ──────────────────────────
+  const [smartFilterEnabled, setSmartFilterEnabled] = useState<boolean>(
+    () => storageGet<boolean>(STORAGE_KEYS.SMART_FILTER, false)
+  );
   const [smartFilterResult, setSmartFilterResult] = useState<SmartFilterResult | null>(null);
+
+  // ── V3: Odds-blended state ────────────────────────────────────────────────
+  const [oddsAlpha, setOddsAlpha] = useState<number>(
+    () => storageGet<number>(STORAGE_KEYS.ODDS_ALPHA, DEFAULT_ODDS_ALPHA)
+  );
+  const [fixtureId, setFixtureId] = useState<number | null>(null);
+  const [prefilledOdds, setPrefilledOdds] = useState<Record<string, number>>({});
+
+  // ── Live odds via TanStack Query ──────────────────────────────────────────
+  const {
+    data: oddsData,
+    isLoading: oddsLoading,
+  } = useFixtureOdds(fixtureId);
+
+  const liveMatchOdds: ParsedMatchOdds | null = oddsData?.matchOdds ?? null;
+  const liveCorrectScoreOdds: ParsedCorrectScoreOdds = oddsData?.correctScoreOdds ?? {};
+  const hasLiveOdds = Object.keys(liveCorrectScoreOdds).length > 0 || liveMatchOdds !== null;
 
   // ── Spin state ────────────────────────────────────────────────────────────
   const [multiSpinCount, setMultiSpinCount] = useState<SpinCount>(10);
@@ -72,24 +112,38 @@ function App() {
   // Home advantage multiplier derived from modifiers
   const homeAdvMultiplier = predictionMode === 'poisson' && modifiers.homeAdvantageEnabled ? 1.12 : 1.0;
 
+  const poissonProbabilities = useMemo<ProbabilityMap>(() => {
+    if (selectedArray.length === 0) return {};
+    return calculatePoissonProbabilities(
+      xgSettings.homeXG,
+      xgSettings.awayXG,
+      selectedArray,
+      homeAdvMultiplier,
+    );
+  }, [xgSettings, selectedArray, homeAdvMultiplier]);
+
   const probabilities = useMemo<ProbabilityMap>(() => {
     if (selectedArray.length === 0) return {};
-    if (predictionMode === 'poisson') {
-      return calculatePoissonProbabilities(
-        xgSettings.homeXG,
-        xgSettings.awayXG,
-        selectedArray,
-        homeAdvMultiplier,
-      );
+
+    if (predictionMode === 'poisson') return poissonProbabilities;
+
+    if (predictionMode === 'historical') return getHistoricalProbabilities(selectedArray);
+
+    if (predictionMode === 'odds-blended') {
+      return calculateBlendedProbabilities({
+        scores: selectedArray,
+        modelProbabilities: poissonProbabilities,
+        correctScoreOdds: liveCorrectScoreOdds,
+        matchOdds: liveMatchOdds,
+        alpha: oddsAlpha,
+      });
     }
-    if (predictionMode === 'historical') {
-      return getHistoricalProbabilities(selectedArray);
-    }
+
     // Uniform: equal weight
     const uniform: ProbabilityMap = {};
     selectedArray.forEach((s) => { uniform[s] = 1 / selectedArray.length; });
     return uniform;
-  }, [predictionMode, xgSettings, selectedArray, homeAdvMultiplier]);
+  }, [predictionMode, poissonProbabilities, selectedArray, liveCorrectScoreOdds, liveMatchOdds, oddsAlpha]);
 
   // ── V2: Market probabilities ──────────────────────────────────────────────
   const marketProbabilities = useMemo(
@@ -146,6 +200,8 @@ function App() {
         selectedScoresCount: selectedScores.size,
         suggestedScores: [singleResult],
         predictionMode,
+        fixtureId: fixtureId ?? undefined,
+        oddsUsed: Object.keys(liveCorrectScoreOdds).length > 0 ? liveCorrectScoreOdds : undefined,
       };
       setHistory((prev) => [...prev, entry]);
     }
@@ -163,6 +219,8 @@ function App() {
         selectedScoresCount: selectedScores.size,
         suggestedScores: spinSession.suggestedScores,
         predictionMode,
+        fixtureId: fixtureId ?? undefined,
+        oddsUsed: Object.keys(liveCorrectScoreOdds).length > 0 ? liveCorrectScoreOdds : undefined,
       };
       setHistory((prev) => [...prev, entry]);
     }
@@ -170,6 +228,15 @@ function App() {
 
   // ── Persist history ───────────────────────────────────────────────────────
   useEffect(() => { saveHistory(history); }, [history]);
+
+  // ── Persist UI preferences ────────────────────────────────────────────────
+  useEffect(() => { storageSet(STORAGE_KEYS.XG_SETTINGS, xgSettings); }, [xgSettings]);
+  useEffect(() => { storageSet(STORAGE_KEYS.PREDICTION_MODE, predictionMode); }, [predictionMode]);
+  useEffect(() => { storageSet(STORAGE_KEYS.MODIFIERS, modifiers); }, [modifiers]);
+  useEffect(() => { storageSet(STORAGE_KEYS.SMART_FILTER, smartFilterEnabled); }, [smartFilterEnabled]);
+  useEffect(() => { storageSet(STORAGE_KEYS.MAX_GOALS, maxGoals); }, [maxGoals]);
+  useEffect(() => { storageSet(STORAGE_KEYS.LAST_FIXTURE, matchInfo); }, [matchInfo]);
+  useEffect(() => { storageSet(STORAGE_KEYS.ODDS_ALPHA, oddsAlpha); }, [oddsAlpha]);
 
   const handleClearHistory = useCallback(() => {
     setHistory([]);
@@ -179,12 +246,20 @@ function App() {
   // ── Smart filter handler ──────────────────────────────────────────────────
   const handleSmartFilterToggle = useCallback((enabled: boolean) => {
     setSmartFilterEnabled(enabled);
-    setSmartFilterResult(enabled ? applySmartFilter(selectedArray, xgSettings) : null);
-  }, [selectedArray, xgSettings]);
+    setSmartFilterResult(
+      enabled ? applySmartFilter(selectedArray, xgSettings, liveMatchOdds) : null
+    );
+  }, [selectedArray, xgSettings, liveMatchOdds]);
 
   const handleSmartFilterResult = useCallback((result: SmartFilterResult | null) => {
     setSmartFilterResult(result);
   }, []);
+
+  // ── xG apply handler (from FixtureLookupPanel) ────────────────────────────
+  const handleXGApply = useCallback((homeXG: number, awayXG: number) => {
+    setXGSettings({ homeXG, awayXG });
+    if (predictionMode === 'uniform') setPredictionMode('poisson');
+  }, [predictionMode]);
 
   // ── Derived display values ────────────────────────────────────────────────
   const suggestedScores = spinSession?.suggestedScores ?? (singleResult ? [singleResult] : []);
@@ -201,9 +276,14 @@ function App() {
 
       <main className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
 
-        {/* Row 1: Match info + Score generator */}
+        {/* Row 1: Fixture lookup + Score generator */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <MatchForm matchInfo={matchInfo} onChange={setMatchInfo} />
+          <FixtureLookupPanel
+            matchInfo={matchInfo}
+            onMatchInfoChange={setMatchInfo}
+            onXGApply={handleXGApply}
+            onFixtureIdChange={setFixtureId}
+          />
           <ScoreGenerator
             maxGoals={maxGoals}
             onMaxGoalsChange={setMaxGoals}
@@ -218,13 +298,16 @@ function App() {
           homeTeamName={matchInfo.homeTeam}
           awayTeamName={matchInfo.awayTeam}
           modifiers={modifiers}
+          oddsAlpha={oddsAlpha}
+          hasLiveOdds={hasLiveOdds}
           onModeChange={setPredictionMode}
           onXGChange={setXGSettings}
           onModifiersChange={setModifiers}
+          onOddsAlphaChange={setOddsAlpha}
         />
 
-        {/* V2: Smart Filter — Poisson mode only */}
-        {predictionMode === 'poisson' && (
+        {/* V2: Smart Filter — analytical modes only */}
+        {(predictionMode === 'poisson' || predictionMode === 'odds-blended') && (
           <SmartFilterPanel
             scores={selectedArray}
             xgSettings={xgSettings}
@@ -251,6 +334,18 @@ function App() {
           <MarketDashboard
             markets={marketProbabilities}
             predictionMode={predictionMode}
+          />
+        )}
+
+        {/* V3: Bookmaker Odds Dashboard — shown when odds are available */}
+        {isAnalyticsMode && (
+          <OddsDashboardPanel
+            matchOdds={liveMatchOdds}
+            correctScoreOdds={liveCorrectScoreOdds}
+            modelProbabilities={probabilities}
+            bookmakerName={oddsData?.bookmakerName ?? ''}
+            isLoading={oddsLoading}
+            onPrefilledOddsChange={setPrefilledOdds}
           />
         )}
 
@@ -301,11 +396,12 @@ function App() {
             probabilities={probabilities}
             predictionMode={predictionMode}
             smartFilter={smartFilterEnabled ? smartFilterResult : null}
+            prefilledOdds={prefilledOdds}
           />
         )}
 
         {/* History (persisted across sessions) */}
-        <History entries={history} onClear={handleClearHistory} />
+        <History entries={history} onClear={handleClearHistory} onUpdate={setHistory} />
 
       </main>
 

@@ -13,6 +13,7 @@ const MODE_LABELS: Record<PredictionMode, string> = {
   uniform: 'Theoretical',
   poisson: 'Poisson %',
   historical: 'Historical %',
+  'odds-blended': 'Blended %',
 };
 
 /**

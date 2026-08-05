@@ -9,6 +9,8 @@ interface MonteCarloPanelProps {
   probabilities: ProbabilityMap;
   predictionMode: PredictionMode;
   smartFilter?: SmartFilterResult | null;
+  /** Pre-filled bookie odds from OddsDashboardPanel (score → decimal odds) */
+  prefilledOdds?: Record<string, number>;
 }
 
 const SIM_COUNTS: SimCount[] = [100, 500, 1000, 5000];
@@ -29,14 +31,26 @@ const MonteCarloPanel: React.FC<MonteCarloPanelProps> = ({
   probabilities,
   predictionMode,
   smartFilter,
+  prefilledOdds = {},
 }) => {
   const [simCount, setSimCount] = useState<SimCount>(1000);
   const [result, setResult] = useState<MonteCarloResult | null>(null);
   const [running, setRunning] = useState(false);
   const [isStale, setIsStale] = useState(false);
   const [copied, setCopied] = useState(false);
-  // Per-row bookmaker odds
+  // Per-row bookmaker odds (string for input display)
   const [oddsMap, setOddsMap] = useState<Record<ScoreString, string>>({});
+
+  // Sync pre-filled odds from OddsDashboardPanel whenever they change
+  useEffect(() => {
+    if (Object.keys(prefilledOdds).length > 0) {
+      const stringified: Record<string, string> = {};
+      Object.entries(prefilledOdds).forEach(([score, odds]) => {
+        stringified[score] = odds.toFixed(2);
+      });
+      setOddsMap((prev) => ({ ...stringified, ...prev }));
+    }
+  }, [prefilledOdds]);
 
   // Detect fixture/probability changes → mark result as stale
   const prevKey = useRef('');
@@ -260,7 +274,7 @@ const MonteCarloPanel: React.FC<MonteCarloPanelProps> = ({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-700/50">
-                {result.ranked.map(({ score, count, pct, modelPct }, idx) => {
+                {result.ranked.map(({ score, pct, modelPct }, idx) => {
                   const oddsInput = oddsMap[score] ?? '';
                   const parsedOdds = parseOdds(oddsInput);
                   const vb = parsedOdds

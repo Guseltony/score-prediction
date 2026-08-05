@@ -14,9 +14,10 @@ interface SuggestionCardProps {
 }
 
 const MODE_BADGE: Record<PredictionMode, { label: string; color: string }> = {
-  uniform:    { label: '🎲 Uniform',   color: 'bg-slate-600/40 text-slate-300 border-slate-500/40' },
-  poisson:    { label: '📐 Poisson',   color: 'bg-blue-600/30 text-blue-300 border-blue-500/40' },
-  historical: { label: '📊 Historical', color: 'bg-amber-600/30 text-amber-300 border-amber-500/40' },
+  uniform:        { label: '🎲 Uniform',      color: 'bg-slate-600/40 text-slate-300 border-slate-500/40' },
+  poisson:        { label: '📐 Poisson',      color: 'bg-blue-600/30 text-blue-300 border-blue-500/40' },
+  historical:     { label: '📊 Historical',   color: 'bg-amber-600/30 text-amber-300 border-amber-500/40' },
+  'odds-blended': { label: '📡 Odds-Blended', color: 'bg-violet-600/30 text-violet-300 border-violet-500/40' },
 };
 
 /**

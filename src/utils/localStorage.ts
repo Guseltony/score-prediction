@@ -1,30 +1,27 @@
+/**
+ * localStorage.ts — History persistence helpers.
+ * Now delegates all storage operations to the central storage.ts service.
+ */
 import type { HistoryEntry } from '../types';
+import { STORAGE_KEYS, storageGet, storageSet, storageRemove } from './storage';
 
-const HISTORY_KEY = 'csp_history_v2';
-
-/** Serialise and persist history to localStorage. Silently fails if unavailable. */
+/** Serialise and persist history to localStorage. */
 export function saveHistory(entries: HistoryEntry[]): void {
-  try {
-    const serialized = JSON.stringify(
-      entries.map((e) => ({ ...e, timestamp: e.timestamp.toISOString() }))
-    );
-    localStorage.setItem(HISTORY_KEY, serialized);
-  } catch {
-    // Storage quota exceeded or localStorage not available (e.g. private mode)
-  }
+  storageSet(
+    STORAGE_KEYS.HISTORY,
+    entries.map((e) => ({ ...e, timestamp: e.timestamp.toISOString() }))
+  );
 }
 
 /** Load and deserialise history from localStorage. Returns empty array on failure. */
 export function loadHistory(): HistoryEntry[] {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const parsed: any[] = storageGet(STORAGE_KEYS.HISTORY, []);
   try {
-    const raw = localStorage.getItem(HISTORY_KEY);
-    if (!raw) return [];
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const parsed: any[] = JSON.parse(raw);
     return parsed.map((e) => ({
       ...e,
       timestamp: new Date(e.timestamp as string),
-      predictionMode: e.predictionMode ?? 'uniform', // backfill legacy entries
+      predictionMode: e.predictionMode ?? 'uniform',
     }));
   } catch {
     return [];
@@ -33,9 +30,5 @@ export function loadHistory(): HistoryEntry[] {
 
 /** Remove all persisted history. */
 export function clearPersistedHistory(): void {
-  try {
-    localStorage.removeItem(HISTORY_KEY);
-  } catch {
-    // ignore
-  }
+  storageRemove(STORAGE_KEYS.HISTORY);
 }

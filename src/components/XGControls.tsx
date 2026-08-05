@@ -9,9 +9,12 @@ interface XGControlsProps {
   homeTeamName: string;
   awayTeamName: string;
   modifiers: AdvancedModifiers;
+  oddsAlpha: number;
+  hasLiveOdds: boolean;
   onModeChange: (mode: PredictionMode) => void;
   onXGChange: (settings: XGSettings) => void;
   onModifiersChange: (modifiers: AdvancedModifiers) => void;
+  onOddsAlphaChange: (alpha: number) => void;
 }
 
 const MODES: { id: PredictionMode; label: string; icon: string; description: string }[] = [
@@ -33,6 +36,12 @@ const MODES: { id: PredictionMode; label: string; icon: string; description: str
     icon: '📊',
     description: 'Weighted by real football data. Rare scorelines are very unlikely.',
   },
+  {
+    id: 'odds-blended',
+    label: 'Odds-Blended',
+    icon: '📡',
+    description: 'Merges Poisson model with live bookmaker odds. Most accurate when odds are loaded.',
+  },
 ];
 
 /**
@@ -44,9 +53,12 @@ const XGControls: React.FC<XGControlsProps> = ({
   homeTeamName,
   awayTeamName,
   modifiers,
+  oddsAlpha,
+  hasLiveOdds,
   onModeChange,
   onXGChange,
   onModifiersChange,
+  onOddsAlphaChange,
 }) => {
   const [showCalculator, setShowCalculator] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
@@ -69,7 +81,7 @@ const XGControls: React.FC<XGControlsProps> = ({
       </p>
 
       {/* Mode tabs */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-5">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-5">
         {MODES.map(({ id, label, icon, description }) => (
           <button
             key={id}
@@ -227,6 +239,58 @@ const XGControls: React.FC<XGControlsProps> = ({
             <span className="text-white font-mono font-semibold">2-1</span> are weighted
             ~10× more likely than high-scoring results like 4-3 or 5-2.
           </p>
+        </div>
+      )}
+
+      {/* Odds-Blended panel */}
+      {mode === 'odds-blended' && (
+        <div className="space-y-4 animate-fade-in">
+          <div className="p-4 bg-slate-900/40 rounded-xl border border-slate-700/40">
+            {/* Live odds status */}
+            <div className="flex items-center gap-2 mb-4">
+              <span className={`w-2 h-2 rounded-full ${hasLiveOdds ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`} />
+              <p className={`text-xs font-semibold ${hasLiveOdds ? 'text-emerald-300' : 'text-amber-300'}`}>
+                {hasLiveOdds ? 'Live odds loaded ✅' : '⚠️ No odds — search a fixture to load odds'}
+              </p>
+            </div>
+
+            {/* Alpha slider */}
+            <div className="mb-1">
+              <div className="flex items-center justify-between mb-2">
+                <label className="text-sm text-slate-300">Model trust (α)</label>
+                <span className="text-blue-300 font-mono font-bold text-sm bg-blue-500/20
+                  border border-blue-500/30 rounded-lg px-2.5 py-0.5 min-w-[3.5rem] text-center">
+                  {oddsAlpha.toFixed(2)}
+                </span>
+              </div>
+              <input
+                id="odds-alpha-slider"
+                type="range"
+                min={0}
+                max={1}
+                step={0.05}
+                value={oddsAlpha}
+                onChange={(e) => onOddsAlphaChange(parseFloat(e.target.value))}
+                className="w-full h-2 rounded-full appearance-none cursor-pointer
+                  [&::-webkit-slider-thumb]:appearance-none
+                  [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4
+                  [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-blue-400
+                  [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-blue-600
+                  [&::-webkit-slider-thumb]:shadow-lg [&::-webkit-slider-thumb]:cursor-pointer
+                  [&::-webkit-slider-thumb]:transition-transform [&::-webkit-slider-thumb]:hover:scale-125"
+                style={{ background: `linear-gradient(to right, #3b82f6 ${oddsAlpha * 100}%, #334155 ${oddsAlpha * 100}%)` }}
+              />
+              <div className="flex justify-between text-xs text-slate-600 mt-1">
+                <span>Full Bookie</span>
+                <span>50/50</span>
+                <span>Full Model</span>
+              </div>
+            </div>
+
+            <p className="text-xs text-slate-500 mt-3">
+              {Math.round(oddsAlpha * 100)}% Poisson model + {Math.round((1 - oddsAlpha) * 100)}% Bookmaker implied probabilities
+            </p>
+          </div>
         </div>
       )}
     </div>

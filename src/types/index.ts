@@ -17,7 +17,7 @@ export type ProbabilityMap = Record<ScoreString, number>;
 // ─── Prediction Modes ─────────────────────────────────────────────────────────
 
 /** How scores are selected during a spin */
-export type PredictionMode = 'uniform' | 'poisson' | 'historical';
+export type PredictionMode = 'uniform' | 'poisson' | 'historical' | 'odds-blended';
 
 /** Expected goals settings for the Poisson model */
 export interface XGSettings {
@@ -65,6 +65,12 @@ export interface HistoryEntry {
   selectedScoresCount: number;
   suggestedScores: ScoreString[];
   predictionMode: PredictionMode;
+  /** Actual result entered by user after the match */
+  actualResult?: ScoreString;
+  /** Snapshot of bookmaker odds at prediction time */
+  oddsUsed?: Record<string, number>;
+  /** API fixture ID for reference */
+  fixtureId?: number;
 }
 
 // ─── V2: Advanced Modifiers ─────────────────────────────────────────────────
