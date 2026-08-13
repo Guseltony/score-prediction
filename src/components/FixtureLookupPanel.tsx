@@ -5,12 +5,14 @@ import { useTeamSearch } from '../hooks/useTeamSearch';
 import { useTeamFixtures } from '../hooks/useTeamFixtures';
 import { useHeadToHead } from '../hooks/useHeadToHead';
 import { useAutoXG } from '../hooks/useAutoXG';
+import type { MatchIntelligenceInput } from '../utils/matchIntelligence';
 
 interface FixtureLookupPanelProps {
   matchInfo: MatchInfo;
   onMatchInfoChange: (info: MatchInfo) => void;
   onXGApply: (homeXG: number, awayXG: number) => void;
   onFixtureIdChange: (id: number | null) => void;
+  onAutoIntelligenceUpdate?: (data: Partial<MatchIntelligenceInput>) => void;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -274,7 +276,8 @@ const ScoreRow: React.FC<{
   onScoreChange: (v: string) => void;
   onOpponentChange: (v: string) => void;
   onRemove: () => void;
-}> = ({ index, score, opponent, onScoreChange, onOpponentChange, onRemove }) => {
+  onEnter?: () => void;
+}> = ({ index, score, opponent, onScoreChange, onOpponentChange, onRemove, onEnter }) => {
   const parsed = parseScoreStr(score);
   const result = parsed
     ? parsed.scored > parsed.conceded ? 'W' : parsed.scored < parsed.conceded ? 'L' : 'D'
@@ -288,6 +291,12 @@ const ScoreRow: React.FC<{
         placeholder="2-1"
         value={score}
         onChange={(e) => onScoreChange(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && onEnter) {
+            e.preventDefault();
+            onEnter();
+          }
+        }}
         className={`w-16 bg-slate-900/60 border rounded-lg px-2 py-1.5 text-sm font-mono text-center
           text-white focus:outline-none focus:ring-1 transition-all
           ${result === 'W' ? 'border-emerald-500/50 focus:ring-emerald-500/30'
@@ -301,6 +310,12 @@ const ScoreRow: React.FC<{
         placeholder="vs Opponent (optional)"
         value={opponent}
         onChange={(e) => onOpponentChange(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && onEnter) {
+            e.preventDefault();
+            onEnter();
+          }
+        }}
         className="flex-1 bg-slate-900/60 border border-slate-700 rounded-lg px-2 py-1.5
           text-xs text-slate-300 placeholder-slate-600 focus:outline-none
           focus:border-slate-500 focus:ring-1 focus:ring-slate-500/20 transition-all"
@@ -330,6 +345,9 @@ const ManualEntrySection: React.FC<{
 }> = ({ homeTeamName, awayTeamName, homeRows, awayRows, h2hRows, onHomeChange, onAwayChange, onH2HChange }) => {
 
   const [open, setOpen] = useState(false);
+  const homeRef = useRef<HTMLDivElement>(null);
+  const awayRef = useRef<HTMLDivElement>(null);
+  const h2hRef = useRef<HTMLDivElement>(null);
 
   const editRow = (
     rows: ManualRow[],
@@ -351,14 +369,32 @@ const ManualEntrySection: React.FC<{
     if (rows.length < 5) setter([...rows, { ...EMPTY_ROW }]);
   };
 
+  const handleEnter = (
+    rows: ManualRow[],
+    idx: number,
+    setter: (r: ManualRow[]) => void,
+    containerRef: React.RefObject<HTMLDivElement>
+  ) => {
+    if (idx === rows.length - 1 && rows.length < 5) {
+      setter([...rows, { ...EMPTY_ROW }]);
+    }
+    setTimeout(() => {
+      if (containerRef.current) {
+        const inputs = containerRef.current.querySelectorAll<HTMLInputElement>('input[placeholder="2-1"]');
+        if (inputs.length > idx + 1) inputs[idx + 1].focus();
+      }
+    }, 0);
+  };
+
   const renderSection = (
     title: string,
     color: string,
     rows: ManualRow[],
     setter: (r: ManualRow[]) => void,
+    containerRef: React.RefObject<HTMLDivElement>,
     placeholder = 'Enter score (e.g. 2-1)'
   ) => (
-    <div>
+    <div ref={containerRef}>
       <p className={`text-xs font-semibold ${color} uppercase tracking-wider mb-2`}>{title}</p>
       <div className="space-y-2">
         {rows.map((row, i) => (
@@ -370,6 +406,7 @@ const ManualEntrySection: React.FC<{
             onScoreChange={(v) => editRow(rows, i, 'score', v, setter)}
             onOpponentChange={(v) => editRow(rows, i, 'opponent', v, setter)}
             onRemove={() => removeRow(rows, i, setter)}
+            onEnter={() => handleEnter(rows, i, setter, containerRef)}
           />
         ))}
         {rows.length < 5 && (
@@ -418,6 +455,7 @@ const ManualEntrySection: React.FC<{
             'text-blue-300',
             homeRows,
             onHomeChange,
+            homeRef
           )}
 
           {awayTeamName && renderSection(
@@ -425,6 +463,7 @@ const ManualEntrySection: React.FC<{
             'text-violet-300',
             awayRows,
             onAwayChange,
+            awayRef
           )}
 
           {homeTeamName && awayTeamName && renderSection(
@@ -432,6 +471,7 @@ const ManualEntrySection: React.FC<{
             'text-amber-300',
             h2hRows,
             onH2HChange,
+            h2hRef,
             `Enter ${homeTeamName} scores vs ${awayTeamName}`
           )}
         </div>
@@ -443,15 +483,17 @@ const ManualEntrySection: React.FC<{
 // ─── Main panel ───────────────────────────────────────────────────────────────
 
 const FixtureLookupPanel: React.FC<FixtureLookupPanelProps> = ({
-  matchInfo,
   onMatchInfoChange,
   onXGApply,
   onFixtureIdChange,
+  onAutoIntelligenceUpdate,
 }) => {
   const [homeTeam, setHomeTeam] = useState<ApiTeamResult | null>(null);
   const [awayTeam, setAwayTeam] = useState<ApiTeamResult | null>(null);
   const [homeInput, setHomeInput] = useState('');
   const [awayInput, setAwayInput] = useState('');
+  const [homeCountryInput, setHomeCountryInput] = useState('');
+  const [awayCountryInput, setAwayCountryInput] = useState('');
   const [applied, setApplied] = useState(false);
 
   // Manual entry state
@@ -513,13 +555,15 @@ const FixtureLookupPanel: React.FC<FixtureLookupPanelProps> = ({
     mergedAwayFixtures.length > 0 ? mergedAwayFixtures : undefined,
     effectiveHomeName,
     effectiveAwayName,
+    homeCountryInput,
+    awayCountryInput,
   );
 
   // Sync team names to parent
   useEffect(() => {
     onMatchInfoChange({
-      homeTeam: effectiveHomeName !== 'Home' ? effectiveHomeName : matchInfo.homeTeam,
-      awayTeam: effectiveAwayName !== 'Away' ? effectiveAwayName : matchInfo.awayTeam,
+      homeTeam: effectiveHomeName !== 'Home' ? effectiveHomeName : '',
+      awayTeam: effectiveAwayName !== 'Away' ? effectiveAwayName : '',
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [effectiveHomeName, effectiveAwayName]);
@@ -528,6 +572,33 @@ const FixtureLookupPanel: React.FC<FixtureLookupPanelProps> = ({
   useEffect(() => {
     onFixtureIdChange(null); // future: link to next fixture ID
   }, [homeTeam, awayTeam, onFixtureIdChange]);
+
+  // Propagate intelligence updates
+  useEffect(() => {
+    if (!onAutoIntelligenceUpdate) return;
+    
+    const homeForm = mergedHomeFixtures.slice(0, 5).map(f => f.result).join('');
+    const awayForm = mergedAwayFixtures.slice(0, 5).map(f => f.result).join('');
+    
+    const homeLeagueAvg = autoXG?.homeLeagueAvg || 1.4;
+    const awayLeagueAvg = autoXG?.awayLeagueAvg || 1.4;
+
+    const homeAttackRating = Math.max(1, Math.min(10, Math.round(5 * ((autoXG?.homeAvgScored || homeLeagueAvg) / homeLeagueAvg))));
+    // If conceded is 0, defense rating is 10
+    const homeDefenseRating = (autoXG?.homeAvgConceded === 0) ? 10 : Math.max(1, Math.min(10, Math.round(5 * (homeLeagueAvg / (autoXG?.homeAvgConceded || homeLeagueAvg)))));
+    
+    const awayAttackRating = Math.max(1, Math.min(10, Math.round(5 * ((autoXG?.awayAvgScored || awayLeagueAvg) / awayLeagueAvg))));
+    const awayDefenseRating = (autoXG?.awayAvgConceded === 0) ? 10 : Math.max(1, Math.min(10, Math.round(5 * (awayLeagueAvg / (autoXG?.awayAvgConceded || awayLeagueAvg)))));
+    
+    onAutoIntelligenceUpdate({
+      homeForm,
+      awayForm,
+      homeAttackRating,
+      homeDefenseRating,
+      awayAttackRating,
+      awayDefenseRating,
+    });
+  }, [mergedHomeFixtures, mergedAwayFixtures, autoXG, onAutoIntelligenceUpdate]);
 
   const handleApplyXG = () => {
     if (!autoXG) return;
@@ -553,26 +624,50 @@ const FixtureLookupPanel: React.FC<FixtureLookupPanelProps> = ({
 
       {/* Team search inputs */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-5">
-        <TeamSearchInput
-          inputId="home-team-search"
-          label="Home Team"
-          placeholder="e.g. Celtic, Arsenal…"
-          value={homeTeam?.team.name ?? homeInput}
-          selectedTeam={homeTeam}
-          onChangeText={setHomeInput}
-          onSelect={(t) => { setHomeTeam(t); setHomeInput(t.team.name); }}
-          onClear={() => { setHomeTeam(null); setHomeInput(''); setManualHomeRows([]); }}
-        />
-        <TeamSearchInput
-          inputId="away-team-search"
-          label="Away Team"
-          placeholder="e.g. Dundee, Chelsea…"
-          value={awayTeam?.team.name ?? awayInput}
-          selectedTeam={awayTeam}
-          onChangeText={setAwayInput}
-          onSelect={(t) => { setAwayTeam(t); setAwayInput(t.team.name); }}
-          onClear={() => { setAwayTeam(null); setAwayInput(''); setManualAwayRows([]); }}
-        />
+        <div className="space-y-2">
+          <TeamSearchInput
+            inputId="home-team-search"
+            label="Home Team"
+            placeholder="e.g. Celtic, Arsenal…"
+            value={homeTeam?.team.name ?? homeInput}
+            selectedTeam={homeTeam}
+            onChangeText={setHomeInput}
+            onSelect={(t) => { setHomeTeam(t); setHomeInput(t.team.name); setHomeCountryInput(t.team.country); }}
+            onClear={() => { setHomeTeam(null); setHomeInput(''); setHomeCountryInput(''); setManualHomeRows([]); }}
+          />
+          <div className="flex items-center gap-2 bg-slate-900/40 px-3 py-2 rounded-xl border border-slate-700/50">
+            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider w-16 shrink-0">Country</label>
+            <input 
+              type="text" 
+              value={homeCountryInput} 
+              onChange={e => setHomeCountryInput(e.target.value)}
+              placeholder="e.g. England"
+              className="flex-1 bg-transparent border border-slate-700/60 rounded-lg px-2 py-1 text-xs text-white focus:outline-none focus:border-blue-500"
+            />
+          </div>
+        </div>
+        <div className="space-y-2">
+          <TeamSearchInput
+            inputId="away-team-search"
+            label="Away Team"
+            placeholder="e.g. Dundee, Chelsea…"
+            value={awayTeam?.team.name ?? awayInput}
+            selectedTeam={awayTeam}
+            onChangeText={setAwayInput}
+            onSelect={(t) => { setAwayTeam(t); setAwayInput(t.team.name); setAwayCountryInput(t.team.country); }}
+            onClear={() => { setAwayTeam(null); setAwayInput(''); setAwayCountryInput(''); setManualAwayRows([]); }}
+          />
+          <div className="flex items-center gap-2 bg-slate-900/40 px-3 py-2 rounded-xl border border-slate-700/50">
+            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider w-16 shrink-0">Country</label>
+            <input 
+              type="text" 
+              value={awayCountryInput} 
+              onChange={e => setAwayCountryInput(e.target.value)}
+              placeholder="e.g. Scotland"
+              className="flex-1 bg-transparent border border-slate-700/60 rounded-lg px-2 py-1 text-xs text-white focus:outline-none focus:border-blue-500"
+            />
+          </div>
+        </div>
       </div>
 
       {/* Matchup banner */}

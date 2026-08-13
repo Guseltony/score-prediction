@@ -17,6 +17,8 @@ import { calculateBlendedProbabilities } from './utils/oddsBlend';
 import { useRandomScore } from './hooks/useRandomScore';
 import { useFixtureOdds } from './hooks/useFixtureOdds';
 import type { ParsedMatchOdds, ParsedCorrectScoreOdds } from './api/types';
+import { applyMatchIntelligence } from './utils/matchIntelligence';
+import type { MatchIntelligenceInput } from './utils/matchIntelligence';
 
 import Header from './components/Header';
 import FixtureLookupPanel from './components/FixtureLookupPanel';
@@ -33,6 +35,9 @@ import SmartFilterPanel from './components/SmartFilterPanel';
 import OddsDashboardPanel from './components/OddsDashboardPanel';
 import History from './components/History';
 import Footer from './components/Footer';
+import MatchIntelligencePanel from './components/MatchIntelligencePanel';
+import EVDashboard from './components/EVDashboard';
+import { calculateExpectedValue } from './utils/evCalculator';
 
 const DEFAULT_MAX_GOALS = 5;
 const DEFAULT_XG: XGSettings = { homeXG: 1.5, awayXG: 1.2 };
@@ -42,6 +47,18 @@ const DEFAULT_MODIFIERS: AdvancedModifiers = {
 };
 const DEFAULT_FIXTURE: MatchInfo = { homeTeam: '', awayTeam: '' };
 const DEFAULT_ODDS_ALPHA = 0.6;
+
+const DEFAULT_INTELLIGENCE: Omit<MatchIntelligenceInput, 'baseHomeXG' | 'baseAwayXG'> = {
+  homeOdds: 0, drawOdds: 0, awayOdds: 0,
+  homeAttackRating: 5, homeDefenseRating: 5,
+  awayAttackRating: 5, awayDefenseRating: 5,
+  homeForm: '', awayForm: '',
+  h2hHomeBias: 0,
+  competition: 'league',
+  homeAdvantageEnabled: false,
+  volatilityFactor: 0,
+  pitchTilt: 0,
+};
 
 function App() {
   // ── Core state (booted from localStorage) ────────────────────────────────
@@ -79,6 +96,9 @@ function App() {
   );
   const [smartFilterResult, setSmartFilterResult] = useState<SmartFilterResult | null>(null);
 
+  // ── Match Intelligence state ──────────────────────────────────────────────
+  const [intelligenceSettings, setIntelligenceSettings] = useState<Omit<MatchIntelligenceInput, 'baseHomeXG' | 'baseAwayXG'>>(DEFAULT_INTELLIGENCE);
+
   // ── V3: Odds-blended state ────────────────────────────────────────────────
   const [oddsAlpha, setOddsAlpha] = useState<number>(
     () => storageGet<number>(STORAGE_KEYS.ODDS_ALPHA, DEFAULT_ODDS_ALPHA)
@@ -105,6 +125,18 @@ function App() {
   const prefilledOdds = liveCorrectScoreOdds;
   const hasLiveOdds = Object.keys(liveCorrectScoreOdds).length > 0 || liveMatchOdds !== null;
 
+  // Auto-sync live match odds into Match Intelligence settings
+  useEffect(() => {
+    if (liveMatchOdds) {
+      setIntelligenceSettings((prev) => ({
+        ...prev,
+        homeOdds: liveMatchOdds.homeWin,
+        drawOdds: liveMatchOdds.draw,
+        awayOdds: liveMatchOdds.awayWin,
+      }));
+    }
+  }, [liveMatchOdds]);
+
   // ── Spin state ────────────────────────────────────────────────────────────
   const [multiSpinCount, setMultiSpinCount] = useState<SpinCount>(10);
   const [totalSpins, setTotalSpins] = useState(0);
@@ -121,15 +153,41 @@ function App() {
   // Home advantage multiplier derived from modifiers
   const homeAdvMultiplier = predictionMode === 'poisson' && modifiers.homeAdvantageEnabled ? 1.12 : 1.0;
 
+  // ── Match Intelligence: compute adjusted xG ──────────────────────────────
+  const intelligenceResult = useMemo(() => {
+    return applyMatchIntelligence({
+      baseHomeXG: xgSettings.homeXG,
+      baseAwayXG: xgSettings.awayXG,
+      ...intelligenceSettings,
+    });
+  }, [xgSettings, intelligenceSettings]);
+
+  // Use intelligence-adjusted xG in Poisson if ANY intelligence input has been touched
+  const intelligenceActive = intelligenceSettings.homeOdds > 0
+    || intelligenceSettings.homeForm.length > 0
+    || intelligenceSettings.awayForm.length > 0
+    || intelligenceSettings.homeAttackRating !== 5
+    || intelligenceSettings.awayAttackRating !== 5
+    || intelligenceSettings.homeDefenseRating !== 5
+    || intelligenceSettings.awayDefenseRating !== 5
+    || intelligenceSettings.h2hHomeBias !== 0
+    || intelligenceSettings.volatilityFactor > 0
+    || intelligenceSettings.homeAdvantageEnabled
+    || intelligenceSettings.competition !== 'league';
+
+  const effectiveHomeXG = intelligenceActive ? intelligenceResult.adjustedHomeXG : xgSettings.homeXG;
+  const effectiveAwayXG = intelligenceActive ? intelligenceResult.adjustedAwayXG : xgSettings.awayXG;
+
   const poissonProbabilities = useMemo<ProbabilityMap>(() => {
     if (selectedArray.length === 0) return {};
     return calculatePoissonProbabilities(
-      xgSettings.homeXG,
-      xgSettings.awayXG,
+      effectiveHomeXG,
+      effectiveAwayXG,
       selectedArray,
-      homeAdvMultiplier,
+      // Home advantage handled in intelligence when active, else use modifiers
+      intelligenceActive ? 1.0 : homeAdvMultiplier,
     );
-  }, [xgSettings, selectedArray, homeAdvMultiplier]);
+  }, [xgSettings, selectedArray, homeAdvMultiplier, effectiveHomeXG, effectiveAwayXG, intelligenceActive]);
 
   const probabilities = useMemo<ProbabilityMap>(() => {
     if (selectedArray.length === 0) return {};
@@ -159,6 +217,21 @@ function App() {
     () => calculateMarketProbabilities(selectedArray, probabilities),
     [selectedArray, probabilities],
   );
+
+  // ── EV Dashboard Calculation ──────────────────────────────────────────────
+  const evResults = useMemo(() => {
+    // Only calculate EV if we have bookmaker odds (1X2)
+    if (intelligenceSettings.homeOdds > 1 && intelligenceSettings.drawOdds > 1 && intelligenceSettings.awayOdds > 1) {
+      return calculateExpectedValue(
+        probabilities,
+        intelligenceSettings.homeOdds,
+        intelligenceSettings.drawOdds,
+        intelligenceSettings.awayOdds,
+        selectedArray
+      );
+    }
+    return [];
+  }, [probabilities, intelligenceSettings.homeOdds, intelligenceSettings.drawOdds, intelligenceSettings.awayOdds, selectedArray]);
 
   // ── Score generation ──────────────────────────────────────────────────────
   const regenerateScores = useCallback(() => {
@@ -255,10 +328,18 @@ function App() {
   // ── Smart filter handler ──────────────────────────────────────────────────
   const handleSmartFilterToggle = useCallback((enabled: boolean) => {
     setSmartFilterEnabled(enabled);
-    setSmartFilterResult(
-      enabled ? applySmartFilter(selectedArray, xgSettings, liveMatchOdds) : null
-    );
-  }, [selectedArray, xgSettings, liveMatchOdds]);
+  }, []);
+
+  // Reactively update smart filter using adjusted xG
+  useEffect(() => {
+    if (smartFilterEnabled) {
+      setSmartFilterResult(
+        applySmartFilter(selectedArray, { homeXG: effectiveHomeXG, awayXG: effectiveAwayXG }, liveMatchOdds)
+      );
+    } else {
+      setSmartFilterResult(null);
+    }
+  }, [smartFilterEnabled, selectedArray, effectiveHomeXG, effectiveAwayXG, liveMatchOdds]);
 
   const handleSmartFilterResult = useCallback((result: SmartFilterResult | null) => {
     setSmartFilterResult(result);
@@ -269,6 +350,10 @@ function App() {
     setXGSettings({ homeXG, awayXG });
     if (predictionMode === 'uniform') setPredictionMode('poisson');
   }, [predictionMode]);
+
+  const handleAutoIntelligenceUpdate = useCallback((data: Partial<MatchIntelligenceInput>) => {
+    setIntelligenceSettings(prev => ({ ...prev, ...data }));
+  }, []);
 
   // ── Derived display values ────────────────────────────────────────────────
   const suggestedScores = spinSession?.suggestedScores ?? (singleResult ? [singleResult] : []);
@@ -301,6 +386,7 @@ function App() {
             onMatchInfoChange={setMatchInfo}
             onXGApply={handleXGApply}
             onFixtureIdChange={setFixtureId}
+            onAutoIntelligenceUpdate={handleAutoIntelligenceUpdate}
           />
           <ScoreGenerator
             maxGoals={maxGoals}
@@ -320,6 +406,15 @@ function App() {
           onXGChange={setXGSettings}
           onModifiersChange={setModifiers}
           onOddsAlphaChange={setOddsAlpha}
+        />
+
+        {/* Match Intelligence — multi-factor engine */}
+        <MatchIntelligencePanel
+          homeTeam={matchInfo.homeTeam}
+          awayTeam={matchInfo.awayTeam}
+          value={intelligenceSettings}
+          onChange={setIntelligenceSettings}
+          result={intelligenceActive ? intelligenceResult : null}
         />
 
         {/* V2: Smart Filter — analytical modes only */}
@@ -353,6 +448,11 @@ function App() {
             homeTeam={matchInfo.homeTeam || undefined}
             awayTeam={matchInfo.awayTeam || undefined}
           />
+        )}
+
+        {/* Expected Value (+EV) Dashboard */}
+        {isAnalyticsMode && evResults.length > 0 && (
+          <EVDashboard evResults={evResults} />
         )}
 
         {/* V3: Bookmaker Odds Dashboard — shown when odds are available */}

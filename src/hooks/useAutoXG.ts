@@ -20,6 +20,8 @@ interface AutoXGResult {
   homeAvgConceded: number;
   awayAvgScored: number;
   awayAvgConceded: number;
+  homeLeagueAvg: number;
+  awayLeagueAvg: number;
 }
 
 function avgGoals(
@@ -39,25 +41,44 @@ function avgGoals(
   return total / fixtures.length;
 }
 
-const LEAGUE_AVG_GOALS = 1.4; // typical per-team goals average in top leagues
+const COUNTRY_AVG_GOALS: Record<string, number> = {
+  'Germany': 1.60,
+  'Netherlands': 1.60,
+  'Finland': 1.50,
+  'Norway': 1.50,
+  'England': 1.45,
+  'Spain': 1.30,
+  'Italy': 1.35,
+  'France': 1.35,
+  'Portugal': 1.35,
+  'Brazil': 1.20,
+  'Argentina': 1.10,
+};
+
+const DEFAULT_LEAGUE_AVG = 1.4; // typical per-team goals average
 
 export function useAutoXG(
   homeFixtures: RecentFixture[] | undefined,
   awayFixtures: RecentFixture[] | undefined,
   homeTeamName: string,
   awayTeamName: string,
+  homeCountry: string = '',
+  awayCountry: string = '',
 ): AutoXGResult | null {
   return useMemo(() => {
     if (!homeFixtures?.length && !awayFixtures?.length) return null;
 
-    const homeAvgScored    = homeFixtures?.length ? avgGoals(homeFixtures, homeTeamName, 'scored') : LEAGUE_AVG_GOALS;
-    const homeAvgConceded  = homeFixtures?.length ? avgGoals(homeFixtures, homeTeamName, 'conceded') : LEAGUE_AVG_GOALS;
-    const awayAvgScored    = awayFixtures?.length ? avgGoals(awayFixtures, awayTeamName, 'scored') : LEAGUE_AVG_GOALS;
-    const awayAvgConceded  = awayFixtures?.length ? avgGoals(awayFixtures, awayTeamName, 'conceded') : LEAGUE_AVG_GOALS;
+    const homeLeagueAvg = COUNTRY_AVG_GOALS[homeCountry] ?? DEFAULT_LEAGUE_AVG;
+    const awayLeagueAvg = COUNTRY_AVG_GOALS[awayCountry] ?? DEFAULT_LEAGUE_AVG;
+
+    const homeAvgScored    = homeFixtures?.length ? avgGoals(homeFixtures, homeTeamName, 'scored') : homeLeagueAvg;
+    const homeAvgConceded  = homeFixtures?.length ? avgGoals(homeFixtures, homeTeamName, 'conceded') : homeLeagueAvg;
+    const awayAvgScored    = awayFixtures?.length ? avgGoals(awayFixtures, awayTeamName, 'scored') : awayLeagueAvg;
+    const awayAvgConceded  = awayFixtures?.length ? avgGoals(awayFixtures, awayTeamName, 'conceded') : awayLeagueAvg;
 
     // Defence factors: > 1 means leaky defence (concede more than avg)
-    const homeDefenseFactor = homeAvgConceded > 0 ? LEAGUE_AVG_GOALS / homeAvgConceded : 1;
-    const awayDefenseFactor = awayAvgConceded > 0 ? LEAGUE_AVG_GOALS / awayAvgConceded : 1;
+    const homeDefenseFactor = homeAvgConceded > 0 ? homeAvgConceded / homeLeagueAvg : 1;
+    const awayDefenseFactor = awayAvgConceded > 0 ? awayAvgConceded / awayLeagueAvg : 1;
 
     const suggestedHomeXG = Math.max(
       0.3,
@@ -80,6 +101,8 @@ export function useAutoXG(
       homeAvgConceded,
       awayAvgScored,
       awayAvgConceded,
+      homeLeagueAvg,
+      awayLeagueAvg,
     };
-  }, [homeFixtures, awayFixtures, homeTeamName, awayTeamName]);
+  }, [homeFixtures, awayFixtures, homeTeamName, awayTeamName, homeCountry, awayCountry]);
 }

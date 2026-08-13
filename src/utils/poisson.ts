@@ -22,6 +22,19 @@ export function poissonPMF(lambda: number, k: number): number {
 }
 
 /**
+ * Dixon-Coles adjustment multiplier.
+ * Adjusts the independent Poisson assumption for low-scoring matches.
+ * Standard rho value for football is typically around -0.13.
+ */
+function dixonColesAdjustment(h: number, a: number, lambda: number, mu: number, rho = -0.13): number {
+  if (h === 0 && a === 0) return 1 - lambda * mu * rho;
+  if (h === 0 && a === 1) return 1 + lambda * rho;
+  if (h === 1 && a === 0) return 1 + mu * rho;
+  if (h === 1 && a === 1) return 1 - rho;
+  return 1.0;
+}
+
+/**
  * Calculate the probability of every score given home/away expected goals (xG).
  *
  * Assumes goal scoring is independent between teams (standard Dixon-Coles
@@ -38,13 +51,34 @@ export function calculatePoissonProbabilities(
   scores: ScoreString[],
   homeAdvantageMultiplier = 1.0,
 ): ProbabilityMap {
-  const effectiveHomeXG = homeXG * homeAdvantageMultiplier;
+  let effectiveHomeXG = homeXG * homeAdvantageMultiplier;
+  let effectiveAwayXG = awayXG;
+
+  // --- xG Stretcher (Advanced Model Expansion) ---
+  // If one team is clearly better, exaggerate the gap slightly to prevent the Poisson PMF 
+  // from defaulting to 1-1 due to overlapping low-end probabilities.
+  const gap = effectiveHomeXG - effectiveAwayXG;
+  if (Math.abs(gap) > 0.4) {
+    if (gap > 0) {
+      effectiveHomeXG *= 1.1;
+      effectiveAwayXG *= 0.9;
+    } else {
+      effectiveHomeXG *= 0.9;
+      effectiveAwayXG *= 1.1;
+    }
+  }
+
   const raw: ProbabilityMap = {};
   let total = 0;
 
   for (const score of scores) {
     const [h, a] = score.split('-').map(Number);
-    const p = poissonPMF(effectiveHomeXG, h) * poissonPMF(awayXG, a);
+    let p = poissonPMF(effectiveHomeXG, h) * poissonPMF(effectiveAwayXG, a);
+    
+    // Apply Dixon-Coles adjustment for low scores
+    const dcMultiplier = dixonColesAdjustment(h, a, effectiveHomeXG, effectiveAwayXG);
+    p = Math.max(0, p * dcMultiplier); // safeguard against negative probabilities
+    
     raw[score] = p;
     total += p;
   }

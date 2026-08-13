@@ -68,14 +68,44 @@ export function calculateMarketProbabilities(
     .sort((a, b) => b.prob - a.prob);
 
   if (sorted.length > 0) {
-    markets.topScore = sorted[0].score;
-    markets.topScorePct = sorted[0].prob * 100;
-    markets.topScoreOdds = (1 / sorted[0].prob).toFixed(2);
-    markets.runner = sorted.slice(1, 3).map((x) => ({
-      score: x.score,
-      pct: x.prob * 100,
-      odds: (1 / x.prob).toFixed(2),
-    }));
+    let topChoice = sorted[0];
+
+    // --- 1-1 Bias Fix: Score Thresholding ---
+    // If the top score is a draw, but a team is heavily favored overall, pick their best score instead.
+    const [h, a] = topChoice.score.split('-').map(Number);
+    const isDraw = h === a;
+
+    if (isDraw) {
+      const MARGIN = 0.15; // 15% clear margin needed to override
+      
+      if (markets.homeWin > markets.draw + MARGIN) {
+        const bestHomeWin = sorted.find(s => {
+          const [hx, ax] = s.score.split('-').map(Number);
+          return hx > ax;
+        });
+        if (bestHomeWin) topChoice = bestHomeWin;
+      } 
+      else if (markets.awayWin > markets.draw + MARGIN) {
+        const bestAwayWin = sorted.find(s => {
+          const [hx, ax] = s.score.split('-').map(Number);
+          return hx < ax;
+        });
+        if (bestAwayWin) topChoice = bestAwayWin;
+      }
+    }
+
+    markets.topScore = topChoice.score;
+    markets.topScorePct = topChoice.prob * 100;
+    markets.topScoreOdds = (1 / topChoice.prob).toFixed(2);
+    
+    markets.runner = sorted
+      .filter(x => x.score !== topChoice.score)
+      .slice(0, 2)
+      .map((x) => ({
+        score: x.score,
+        pct: x.prob * 100,
+        odds: (1 / x.prob).toFixed(2),
+      }));
   }
 
   return markets;
