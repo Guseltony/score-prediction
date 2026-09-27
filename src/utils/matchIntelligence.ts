@@ -176,9 +176,9 @@ function applyRankGapTactics(
 
   let homeEffect = 1.0;
   let awayEffect = 1.0;
-  let scenario: MatchIntelligenceResult['tacticalContext']['scenario'] = 'normal';
-  let homeStyle: MatchIntelligenceResult['tacticalContext']['homeStyle'] = 'balanced';
-  let awayStyle: MatchIntelligenceResult['tacticalContext']['awayStyle'] = 'balanced';
+  let scenario: NonNullable<MatchIntelligenceResult['tacticalContext']>['scenario'] = 'normal';
+  let homeStyle: NonNullable<MatchIntelligenceResult['tacticalContext']>['homeStyle'] = 'balanced';
+  let awayStyle: NonNullable<MatchIntelligenceResult['tacticalContext']>['awayStyle'] = 'balanced';
   let note = '';
 
   if (rankGap <= 2) {
