@@ -70,8 +70,48 @@ export function calculateBlendedProbabilities(input: BlendedProbsInput): Probabi
   const { scores, modelProbabilities, correctScoreOdds, matchOdds, alpha } = input;
 
   if (Object.keys(correctScoreOdds).length === 0) {
-    // No bookie odds available — fall back to model
-    return modelProbabilities;
+    if (!matchOdds || matchOdds.homeWin <= 1 || matchOdds.awayWin <= 1) {
+      // No bookie odds available at all — fall back to purely model
+      return modelProbabilities;
+    }
+
+    // We only have 1X2 odds. Blend by scaling the 1X2 buckets.
+    const a = effectiveAlpha(alpha, matchOdds);
+    const stripped1X2 = stripMatchOddsVig(matchOdds);
+    
+    let modelHome = 0, modelDraw = 0, modelAway = 0;
+    for (const score of scores) {
+      const p = modelProbabilities[score] ?? 0;
+      const [h, away] = score.split('-').map(Number);
+      if (h > away) modelHome += p;
+      else if (h === away) modelDraw += p;
+      else modelAway += p;
+    }
+    
+    const raw: ProbabilityMap = {};
+    let total = 0;
+    
+    for (const score of scores) {
+      const p = modelProbabilities[score] ?? 0;
+      const [h, away] = score.split('-').map(Number);
+      
+      let bucketRatio = 1;
+      if (h > away && modelHome > 0) bucketRatio = stripped1X2.homeWin / modelHome;
+      else if (h === away && modelDraw > 0) bucketRatio = stripped1X2.draw / modelDraw;
+      else if (h < away && modelAway > 0) bucketRatio = stripped1X2.awayWin / modelAway;
+      
+      const bookieP = p * bucketRatio;
+      const blended = a * p + (1 - a) * bookieP;
+      
+      raw[score] = blended;
+      total += blended;
+    }
+    
+    const result: ProbabilityMap = {};
+    for (const score of scores) {
+      result[score] = total > 0 ? raw[score] / total : 1 / scores.length;
+    }
+    return result;
   }
 
   const a = effectiveAlpha(alpha, matchOdds);
