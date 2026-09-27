@@ -72,24 +72,28 @@ function computeGoalRange(
     return { exact: 0, min: 0, max: 0, homeExact: 0, awayExact: 0, expectedH1: 0, expectedH2: 0 };
   }
 
-  // Weighted sums using model probabilities
   let totalWeight = 0;
   let weightedTotal = 0;
   let weightedHome = 0;
   let weightedAway = 0;
-  let minGoals = Infinity;
-  let maxGoals = -Infinity;
 
-  for (const score of pool) {
-    const prob = probabilities[score] ?? (1 / pool.length); // fallback to uniform
+  // Use the FULL probability map for accurate xG sums, not just the subset pool
+  for (const [score, prob] of Object.entries(probabilities)) {
+    if (prob === 0) continue;
     const [h, a] = score.split('-').map(Number);
     const total = h + a;
-
     weightedTotal += total * prob;
     weightedHome += h * prob;
     weightedAway += a * prob;
     totalWeight += prob;
+  }
 
+  // Calculate min/max from the pool (the most likely scenarios)
+  let minGoals = Infinity;
+  let maxGoals = -Infinity;
+  for (const score of pool) {
+    const [h, a] = score.split('-').map(Number);
+    const total = h + a;
     if (total < minGoals) minGoals = total;
     if (total > maxGoals) maxGoals = total;
   }
@@ -170,20 +174,25 @@ function mkMarket(
 // ─── Full market computation ──────────────────────────────────────────────────
 
 function computeAllMarkets(
-  pool: ScoreString[],
+  pool: ScoreString[], // kept for backward compatibility if needed elsewhere, but ignored for math
   probabilities: ProbabilityMap,
   goalRange: BBGoalRange,
   intelligenceInput: Partial<MatchIntelligenceInput> = {},
 ): BBMarket[] {
-  // Aggregate pool probabilities (normalised)
+  // Use the FULL probability map for markets, not just the narrowed pool.
+  // This ensures mathematical perfection for markets like Over 2.5 and Team Goals.
+  const allScores = Object.keys(probabilities);
+  
   const poolProbs: Record<ScoreString, number> = {};
   let poolTotal = 0;
-  for (const s of pool) {
-    poolProbs[s] = probabilities[s] ?? (1 / pool.length);
+  for (const s of allScores) {
+    poolProbs[s] = probabilities[s] ?? 0;
     poolTotal += poolProbs[s];
   }
   const norm = poolTotal > 0 ? poolTotal : 1;
-  for (const s of pool) poolProbs[s] /= norm;
+  for (const s of allScores) poolProbs[s] /= norm;
+  
+  // The loop below will now use `allScores` instead of `pool`.
 
   // Accumulators
   let gg = 0, ng = 0;
@@ -207,7 +216,7 @@ function computeAllMarkets(
 
   const { expectedH1, expectedH2, exact } = goalRange;
 
-  for (const score of pool) {
+  for (const score of allScores) {
     const p = poolProbs[score];
     const [h, a] = score.split('-').map(Number);
     const total = h + a;

@@ -69,9 +69,22 @@ export interface XGCalculationResult {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function average(values: number[]): number {
+function timeDecayedAverage(values: number[]): number {
   if (values.length === 0) return LEAGUE_AVG_GOALS;
-  return values.reduce((a, b) => a + b, 0) / values.length;
+  
+  // Assume values are chronological (newest at the end).
+  // For 5 matches, weights: [0.2, 0.4, 0.6, 0.8, 1.0]
+  let totalWeight = 0;
+  let weightedSum = 0;
+  
+  for (let i = 0; i < values.length; i++) {
+    // Linear decay based on position
+    const weight = (i + 1) / values.length; 
+    weightedSum += values[i] * weight;
+    totalWeight += weight;
+  }
+  
+  return weightedSum / totalWeight;
 }
 
 function clamp(value: number, min: number, max: number): number {
@@ -90,23 +103,27 @@ function round2(v: number): number {
 export function calculateXG(input: XGCalculationInput): XGCalculationResult {
   const { homeMatches, awayMatches, h2hMatches } = input;
 
-  // Recent form averages
-  const homeAvgScored    = average(homeMatches.map((m) => m.scored));
-  const homeAvgConceded  = average(homeMatches.map((m) => m.conceded));
-  const awayAvgScored    = average(awayMatches.map((m) => m.scored));
-  const awayAvgConceded  = average(awayMatches.map((m) => m.conceded));
+  // Recent form time-decayed averages
+  const homeAvgScored    = timeDecayedAverage(homeMatches.map((m) => m.scored));
+  const homeAvgConceded  = timeDecayedAverage(homeMatches.map((m) => m.conceded));
+  const awayAvgScored    = timeDecayedAverage(awayMatches.map((m) => m.scored));
+  const awayAvgConceded  = timeDecayedAverage(awayMatches.map((m) => m.conceded));
 
   // Strength indices relative to league average
   // homeAttackStrength > 1  → home team scores more than average
   // awayDefenseWeakness > 1 → away team concedes more than average (easier to score against)
-  const homeAttackStr    = homeAvgScored   / LEAGUE_AVG_GOALS;
-  const homeDefenseStr   = homeAvgConceded / LEAGUE_AVG_GOALS;
-  const awayAttackStr    = awayAvgScored   / LEAGUE_AVG_GOALS;
-  const awayDefenseStr   = awayAvgConceded / LEAGUE_AVG_GOALS;
+  
+  // Add a slight regression to the mean to prevent extreme outliers from small sample sizes
+  const regress = (val: number, mean: number, factor = 0.8) => (val * factor) + (mean * (1 - factor));
+  
+  const homeAttackStr    = regress(homeAvgScored, LEAGUE_AVG_GOALS) / LEAGUE_AVG_GOALS;
+  const homeDefenseStr   = regress(homeAvgConceded, LEAGUE_AVG_GOALS) / LEAGUE_AVG_GOALS;
+  const awayAttackStr    = regress(awayAvgScored, LEAGUE_AVG_GOALS) / LEAGUE_AVG_GOALS;
+  const awayDefenseStr   = regress(awayAvgConceded, LEAGUE_AVG_GOALS) / LEAGUE_AVG_GOALS;
 
-  // Dixon–Robinson core prediction
-  const baseHomeXG = homeAttackStr * awayDefenseStr   * LEAGUE_AVG_GOALS * HOME_ADVANTAGE_FACTOR;
-  const baseAwayXG = awayAttackStr * homeDefenseStr   * LEAGUE_AVG_GOALS;
+  // Dixon–Robinson core prediction with refined weighting
+  const baseHomeXG = homeAttackStr * awayDefenseStr * LEAGUE_AVG_GOALS * HOME_ADVANTAGE_FACTOR;
+  const baseAwayXG = awayAttackStr * homeDefenseStr * LEAGUE_AVG_GOALS;
 
   // H2H blend
   let homeXG = baseHomeXG;
@@ -115,8 +132,9 @@ export function calculateXG(input: XGCalculationInput): XGCalculationResult {
   let h2hAwayAvg: number | null = null;
 
   if (h2hMatches.length > 0) {
-    h2hHomeAvg = average(h2hMatches.map((m) => m.homeGoals));
-    h2hAwayAvg = average(h2hMatches.map((m) => m.awayGoals));
+    // H2H doesn't need strict time decay if it's sparse, but we'll use it if ordered
+    h2hHomeAvg = timeDecayedAverage(h2hMatches.map((m) => m.homeGoals));
+    h2hAwayAvg = timeDecayedAverage(h2hMatches.map((m) => m.awayGoals));
     homeXG = baseHomeXG * (1 - H2H_WEIGHT) + h2hHomeAvg * H2H_WEIGHT;
     awayXG = baseAwayXG * (1 - H2H_WEIGHT) + h2hAwayAvg * H2H_WEIGHT;
   }

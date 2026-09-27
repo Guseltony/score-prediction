@@ -38,6 +38,8 @@ import Footer from './components/Footer';
 import MatchIntelligencePanel from './components/MatchIntelligencePanel';
 import EVDashboard from './components/EVDashboard';
 import { calculateExpectedValue } from './utils/evCalculator';
+import ManualStudioPage from './components/ManualStudioPage';
+import AutomatedAnalysisPanel from './components/AutomatedAnalysisPanel';
 
 const DEFAULT_MAX_GOALS = 5;
 const DEFAULT_XG: XGSettings = { homeXG: 1.5, awayXG: 1.2 };
@@ -60,7 +62,10 @@ const DEFAULT_INTELLIGENCE: Omit<MatchIntelligenceInput, 'baseHomeXG' | 'baseAwa
   pitchTilt: 0,
 };
 
+type AppTab = 'manual' | 'engine' | 'automated';
+
 function App() {
+  const [activeTab, setActiveTab] = useState<AppTab>('manual');
   // ── Core state (booted from localStorage) ────────────────────────────────
   const [matchInfo, setMatchInfo] = useState<MatchInfo>(
     () => storageGet<MatchInfo>(STORAGE_KEYS.LAST_FIXTURE, DEFAULT_FIXTURE)
@@ -374,10 +379,44 @@ function App() {
     xgSettings.awayXG !== DEFAULT_AWAY_XG;
 
   return (
-    <div className="min-h-screen bg-slate-900 text-slate-100">
+    <div className="min-h-screen bg-[#04080f] text-slate-100">
       <Header />
 
-      <main className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
+      {/* ── Tab Switcher ──────────────────────────────────────────────────── */}
+      <div className="sticky top-0 z-40 bg-[#04080f]/95 backdrop-blur-xl border-b border-white/5">
+        <div className="max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-10">
+          <div className="flex gap-1 py-3">
+            {([
+              { key: 'manual',    label: '🧠 Manual Studio', sub: 'AI Analysis' },
+              { key: 'engine',    label: '⚙️ Score Engine',  sub: 'Predictor & Tools' },
+              { key: 'automated', label: '⚡ Automated AI',  sub: 'Batch Analysis' },
+            ] as { key: AppTab; label: string; sub: string }[]).map(tab => (
+              <button
+                key={tab.key}
+                onClick={() => setActiveTab(tab.key)}
+                className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold transition-all duration-200
+                  ${
+                    activeTab === tab.key
+                      ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-lg shadow-indigo-600/40 scale-[1.02]'
+                      : 'text-slate-400 hover:text-white hover:bg-white/5'
+                  }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <main className="max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-10 py-8 space-y-6">
+        {/* ── Manual Studio Tab ─────────────────────────────────────────── */}
+        {activeTab === 'manual' && <ManualStudioPage />}
+
+        {/* ── Automated AI Tab ──────────────────────────────────────────── */}
+        {activeTab === 'automated' && <AutomatedAnalysisPanel />}
+
+        {/* ── Score Engine Tab (all existing panels) ────────────────────── */}
+        {activeTab === 'engine' && (<>
 
         {/* Row 1: Fixture lookup + Score generator */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -519,6 +558,7 @@ function App() {
 
         {/* History (persisted across sessions) */}
         <History entries={history} onClear={handleClearHistory} onUpdate={setHistory} />
+        </>)}
 
       </main>
 
